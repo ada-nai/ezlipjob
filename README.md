@@ -46,6 +46,10 @@ Experience EzLipJob in action: [Try the Demo](https://ezlipjob.streamlit.app) *(
 
 ---
 
+## Sample screenshot 
+<img width="1903" height="1026" alt="image" src="https://github.com/user-attachments/assets/daf75781-0f55-439f-b9f7-5269d55f80c3" />
+
+
 ### 1. Environment Setup
 ```bash
 # Clone the repository
