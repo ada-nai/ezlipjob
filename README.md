@@ -47,6 +47,8 @@ Experience EzLipJob in action: Error at Streamlit end during deployment ;(
 ---
 
 ## Sample screenshot 
+<img width="1918" height="1068" alt="image" src="https://github.com/user-attachments/assets/ed94cb3d-b8c4-47a4-8863-1410a6c14998" />
+
 <img width="1915" height="1060" alt="image" src="https://github.com/user-attachments/assets/59e7c51b-6999-490a-8d26-fac47b30f232" />
 
 
