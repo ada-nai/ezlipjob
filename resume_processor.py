@@ -82,16 +82,40 @@ class ResumeProcessor:
         return contact_info
     
     def extract_name(self, text: str) -> str:
-        """Extract candidate name from resume text"""
+        """Extract candidate name from resume text with improved logic"""
         lines = text.strip().split('\n')
         
-        # Usually name is in the first few lines
-        for i, line in enumerate(lines[:5]):
+        # Look for name in first few lines
+        for i, line in enumerate(lines[:7]):
             line = line.strip()
-            if line and len(line.split()) <= 4 and len(line) > 2:
-                # Check if it looks like a name (not email, phone, etc.)
-                if not re.search(r'[@\d\(\)\+\-]', line):
-                    return line
+            if not line:
+                continue
+                
+            # Skip common headers and contact info
+            if any(keyword in line.lower() for keyword in ['resume', 'cv', 'curriculum', 'profile', 'summary', 'objective']):
+                continue
+            if re.search(r'[@\d\(\)\+\-]|\.com|\.net|\.org', line):
+                continue
+            
+            # Check if it looks like a name
+            words = line.split()
+            if 2 <= len(words) <= 4 and len(line) > 5:
+                # Check if words look like name components
+                if all(word.isalpha() or "'" in word for word in words):
+                    # Capitalize properly
+                    name_parts = []
+                    for word in words:
+                        if word.lower() in ['van', 'de', 'da', 'von', 'del', 'la', 'le']:
+                            name_parts.append(word.lower())
+                        else:
+                            name_parts.append(word.capitalize())
+                    return ' '.join(name_parts)
+        
+        # Fallback: look for patterns like "Name: John Doe"
+        for line in lines[:10]:
+            name_match = re.search(r'name\s*[:]\s*([a-zA-Z\s\'-]+)', line, re.IGNORECASE)
+            if name_match:
+                return name_match.group(1).strip().title()
         
         return "Candidate Name"
     

@@ -339,7 +339,7 @@ def scrape_linkedin_job(url: str) -> Dict:
 
 def create_manual_job_data(job_title: str, company_name: str, job_description: str) -> Dict:
     """
-    Create job data structure from manual input
+    Create job data structure from manual input with enhanced parsing
     """
     if not job_title or not company_name:
         return {
@@ -348,35 +348,217 @@ def create_manual_job_data(job_title: str, company_name: str, job_description: s
             'data': None
         }
     
+    # Parse hiring person information
+    hiring_person = extract_hiring_person(job_description)
+    contact_email = extract_contact_email(job_description)
+    subject_line = extract_subject_line(job_description)
+    organization = extract_organization(job_description, company_name)
+    
     job_data = {
         'job_title': job_title.strip(),
-        'company': company_name.strip(),
-        'location': "Not Specified",
+        'company': organization,
+        'location': extract_location(job_description),
         'description': job_description.strip() if job_description else "No description provided",
-        'requirements': [],
-        'employment_type': "Not Specified",
-        'experience_level': "Not Specified",
+        'requirements': extract_enhanced_requirements(job_description),
+        'employment_type': extract_employment_type(job_description),
+        'experience_level': extract_experience_level(job_description),
         'contact_info': {
-            'hiring_manager': "Hiring Manager",
-            'suggested_emails': [f"careers@{company_name.lower().replace(' ', '').replace('.', '').replace(',', '')}.com"],
-            'note': "Manual entry - contact information estimated"
+            'hiring_manager': hiring_person,
+            'contact_email': contact_email,
+            'suggested_subject': subject_line,
+            'suggested_emails': [contact_email] if contact_email else generate_suggested_emails(organization),
+            'note': "Extracted from job posting"
         },
         'url': "Manual Entry"
     }
-    
-    # Extract requirements from description if provided
-    if job_description:
-        sentences = re.split(r'[.•\n]', job_description)
-        requirements = []
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if any(keyword in sentence.lower() for keyword in ['required', 'must', 'experience', 'skill']):
-                if 20 < len(sentence) < 150:
-                    requirements.append(sentence)
-        job_data['requirements'] = requirements[:5]
     
     return {
         'success': True,
         'data': job_data,
         'message': "Manual job data created successfully"
     }
+
+def extract_hiring_person(description: str) -> str:
+    """Extract hiring person name from job description"""
+    if not description:
+        return None
+    
+    # Look for patterns like "Contact John Doe", "Reach out to Jane Smith", email signatures
+    patterns = [
+        r'contact\s+([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'reach\s+out\s+to\s+([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'hiring\s+manager[:\s]*([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'([A-Z][a-z]+\s+[A-Z][a-z]+)@[a-zA-Z0-9.-]+',  # Name before email
+        r'^([A-Z][a-z]+\s+[A-Z][a-z]+)$',  # Name on its own line
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, description, re.MULTILINE | re.IGNORECASE)
+        for match in matches:
+            # Validate it looks like a real name
+            if len(match.split()) == 2 and all(part.isalpha() for part in match.split()):
+                return match.title()
+    
+    return None
+
+def extract_contact_email(description: str) -> str:
+    """Extract contact email from job description"""
+    if not description:
+        return None
+    
+    # Find email addresses
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    emails = re.findall(email_pattern, description)
+    
+    if emails:
+        # Prefer non-generic emails
+        for email in emails:
+            if not any(generic in email.lower() for generic in ['noreply', 'donotreply', 'no-reply']):
+                return email
+        return emails[0]  # Fallback to first email
+    
+    return None
+
+def extract_subject_line(description: str) -> str:
+    """Extract suggested subject line from job description"""
+    if not description:
+        return None
+    
+    # Look for patterns like "Keep subject: ...", "Subject: ...", "Use subject: ..."
+    patterns = [
+        r'keep\s+subject\s*[:\-]\s*(.+?)(?:\n|$)',
+        r'subject\s*[:\-]\s*(.+?)(?:\n|$)',
+        r'use\s+subject\s*[:\-]\s*(.+?)(?:\n|$)',
+        r'email\s+subject\s*[:\-]\s*(.+?)(?:\n|$)',
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, description, re.IGNORECASE | re.MULTILINE)
+        if matches:
+            subject = matches[0].strip().strip('"\'')
+            if 5 < len(subject) < 100:  # Reasonable subject length
+                return subject
+    
+    return None
+
+def extract_organization(description: str, company_name: str) -> str:
+    """Extract organization name, with fallback to company_name"""
+    if not description:
+        return company_name
+    
+    # Look for specific organization mentions
+    patterns = [
+        r'(?:at|in|for)\s+([A-Z][a-zA-Z\s]+(?:Team|Department|Division))',
+        r'([A-Z][a-zA-Z\s]+(?:Inc|Corp|Ltd|LLC|Company))',
+        r'join\s+([A-Z][a-zA-Z\s]+)(?:\s+team)?',
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, description)
+        for match in matches:
+            if 3 < len(match.strip()) < 50:
+                return match.strip()
+    
+    return company_name
+
+def extract_location(description: str) -> str:
+    """Extract work location from description"""
+    if not description:
+        return "Not Specified"
+    
+    # Look for location patterns
+    patterns = [
+        r'work\s+from\s+([A-Za-z\s,]+?)(?:\s+office|\.|$)',
+        r'location[:\s]+([A-Za-z\s,]+?)(?:\.|$)',
+        r'office[:\s]+([A-Za-z\s,]+?)(?:\.|$)',
+        r'based\s+in\s+([A-Za-z\s,]+?)(?:\.|$)',
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, description, re.IGNORECASE)
+        if matches:
+            location = matches[0].strip().strip(',')
+            if 3 < len(location) < 50:
+                return location
+    
+    return "Not Specified"
+
+def extract_enhanced_requirements(description: str) -> List[str]:
+    """Extract job requirements with better parsing"""
+    if not description:
+        return []
+    
+    requirements = []
+    
+    # Split by common delimiters
+    sentences = re.split(r'[.•\n\-]', description)
+    
+    for sentence in sentences:
+        sentence = sentence.strip()
+        # Look for requirement indicators
+        if any(keyword in sentence.lower() for keyword in 
+               ['required', 'must have', 'experience', 'skill', 'knowledge', 'years', 'minimum']):
+            if 10 < len(sentence) < 200:  # Reasonable length
+                requirements.append(sentence.strip())
+    
+    return requirements[:8]  # Limit to top 8
+
+def extract_employment_type(description: str) -> str:
+    """Extract employment type from description"""
+    if not description:
+        return "Not Specified"
+    
+    types = {
+        'full-time': ['full time', 'full-time', 'permanent'],
+        'part-time': ['part time', 'part-time'],
+        'contract': ['contract', 'contractor', 'freelance'],
+        'internship': ['intern', 'internship', 'trainee']
+    }
+    
+    description_lower = description.lower()
+    for emp_type, keywords in types.items():
+        if any(keyword in description_lower for keyword in keywords):
+            return emp_type.title()
+    
+    return "Full-time"  # Default assumption
+
+def extract_experience_level(description: str) -> str:
+    """Extract experience level from description"""
+    if not description:
+        return "Not Specified"
+    
+    # Look for year patterns
+    year_patterns = [
+        r'(\d+)[\+\-]*\s*years?\s+(?:of\s+)?(?:minimum\s+)?experience',
+        r'(\d+)[\+\-]*\s*years?\s+(?:minimum|min)',
+        r'minimum\s+(\d+)\s*years?',
+        r'(\d+)[\+\-]*\s*yrs?\s+experience',
+    ]
+    
+    for pattern in year_patterns:
+        matches = re.findall(pattern, description.lower())
+        if matches:
+            years = int(matches[0])
+            if years <= 2:
+                return f"{years}+ years (Entry Level)"
+            elif years <= 5:
+                return f"{years}+ years (Mid Level)"
+            else:
+                return f"{years}+ years (Senior Level)"
+    
+    return "Not Specified"
+
+def generate_suggested_emails(company: str) -> List[str]:
+    """Generate suggested email addresses based on company name"""
+    if not company:
+        return ["careers@company.com"]
+    
+    clean_company = re.sub(r'[^\w\s]', '', company.lower()).replace(' ', '')
+    suggestions = [
+        f"careers@{clean_company}.com",
+        f"hr@{clean_company}.com", 
+        f"jobs@{clean_company}.com",
+        f"hiring@{clean_company}.com"
+    ]
+    
+    return suggestions

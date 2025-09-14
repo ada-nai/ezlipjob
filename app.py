@@ -1,7 +1,10 @@
 import streamlit as st
 import time
-from datetime import datetime
+import datetime
 from typing import Optional, Dict, Any
+
+# Import configuration
+from config import get_config, validate_configuration, get_debug_info, get_upload_settings
 
 # Import our backend modules
 from resume_processor import process_resume_input
@@ -9,13 +12,54 @@ from job_scraper import scrape_linkedin_job, create_manual_job_data
 from content_generator import generate_application_content
 from models import ToneType, GenerationResult
 
+# Get configuration
+config = get_config()
+
 # Page configuration
 st.set_page_config(
-    page_title="LinkedIn Job Application Assistant",
+    page_title=config.app_name,
     page_icon="📧",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+def check_api_key():
+    """Check if configuration is valid"""
+    try:
+        is_valid, errors = validate_configuration()
+        if not is_valid:
+            st.error("⚠️ Configuration Error")
+            for error in errors:
+                st.error(f"• {error}")
+            
+            with st.expander("💡 Configuration Help"):
+                st.write("**For Local Development:**")
+                st.write("1. Add your OpenAI API key to `.streamlit/secrets.toml`")
+                st.write("2. Copy `.env.example` to `.env` and customize settings")
+                
+                st.write("**For Streamlit Cloud Deployment:**")
+                st.write("1. Add your OpenAI API key to Streamlit Cloud secrets")
+                st.write("2. Set environment variables in deployment settings")
+                
+                st.write("**Environment Variables:**")
+                st.code("""
+OPENAI_API_KEY=your-api-key-here
+OPENAI_MODEL=gpt-4o
+COVER_LETTER_MAX_WORDS=300
+EMAIL_MAX_WORDS=150
+MAX_FILE_SIZE_MB=10
+                """)
+            
+            if config.debug_mode:
+                st.write("**Debug Info:**")
+                debug_info = get_debug_info()
+                st.json(debug_info)
+            
+            st.stop()
+        return True
+    except Exception as e:
+        st.error(f"⚠️ Configuration loading failed: {str(e)}")
+        st.stop()
 
 # Initialize session state
 if 'resume_data' not in st.session_state:
@@ -152,10 +196,11 @@ def process_application_pipeline(resume_text: str = None, uploaded_file = None,
             progress_bar.progress(0.75)
             st.write("**Step 3/4:** Generating personalized content with AI...")
             
+            # Generate content using the standalone function
             content_result = generate_application_content(
                 resume_data=st.session_state.resume_data,
                 job_data=st.session_state.job_data,
-                tone=tone,
+                tone=tone,  # tone is already a string
                 include_company_research=True
             )
             
@@ -179,12 +224,29 @@ def process_application_pipeline(resume_text: str = None, uploaded_file = None,
 def main():
     """Main application function"""
     
+    # Get configuration
+    config = get_config()
+    
     # Check API key first
     check_api_key()
     
     # Header
-    st.title("📧 LinkedIn Job Application Assistant")
-    st.markdown("### Generate personalized cover letters and emails powered by GPT-4o")
+    st.title(f"📧 {config.app_name}")
+    st.markdown(f"### Generate personalized cover letters and emails powered by {config.openai_model}")
+    
+    # Show version and settings in debug mode
+    if config.debug_mode:
+        st.info(f"🔧 Debug Mode | Version {config.app_version} | Model: {config.openai_model}")
+        
+        with st.sidebar:
+            st.subheader("⚙️ Configuration")
+            st.json({
+                'model': config.openai_model,
+                'cover_letter_words': f"{config.cover_letter_min_words}-{config.cover_letter_max_words}",
+                'email_words': f"{config.email_min_words}-{config.email_max_words}",
+                'max_file_size': f"{config.max_file_size_mb}MB",
+                'allowed_types': config.allowed_file_types
+            })
     
     # Progress indicator
     if st.session_state.resume_data and st.session_state.job_data and st.session_state.generated_content:
@@ -215,14 +277,20 @@ def main():
         uploaded_file = None
         
         if input_method == "Upload File (PDF/DOCX)":
+            upload_settings = get_upload_settings()
             uploaded_file = st.file_uploader(
                 "Upload your resume",
-                type=["pdf", "docx"],
-                help="Upload your resume in PDF or Word format"
+                type=upload_settings['allowed_types'],
+                help=f"Upload your resume in {', '.join(upload_settings['allowed_types']).upper()} format (max {upload_settings['max_size_mb']}MB)"
             )
             if uploaded_file:
-                st.success(f"✅ File uploaded: {uploaded_file.name}")
-                st.info("💡 File will be processed when you click Generate")
+                # Check file size
+                file_size_mb = uploaded_file.size / (1024 * 1024)
+                if file_size_mb > upload_settings['max_size_mb']:
+                    st.error(f"❌ File too large: {file_size_mb:.1f}MB. Maximum size: {upload_settings['max_size_mb']}MB")
+                else:
+                    st.success(f"✅ File uploaded: {uploaded_file.name} ({file_size_mb:.1f}MB)")
+                    st.info("💡 File will be processed when you click Generate")
         else:
             resume_text = st.text_area(
                 "Paste your resume text here:",
@@ -235,6 +303,8 @@ def main():
             st.info(f"📊 Resume length: {len(resume_text)} characters")
             if len(resume_text) < 100:
                 st.warning("⚠️ Resume seems short. Add more details for better personalization.")
+            elif len(resume_text) > 5000:
+                st.warning(f"⚠️ Resume is quite long ({len(resume_text)} characters). Consider shortening for better processing.")
     
     with col2:
         st.subheader("🔗 Job Information")
@@ -351,11 +421,17 @@ def main():
                 ])
                 
                 st.text_area(
-                    f"Cover Letter ({result.cover_letter.word_count} words):",
+                    f"Cover Letter ({result.cover_letter.word_count} words | Target: {config.cover_letter_min_words}-{config.cover_letter_max_words}):",
                     value=full_cover_letter,
                     height=300,
                     key="cover_letter_display"
                 )
+                
+                # Word count validation
+                if result.cover_letter.word_count < config.cover_letter_min_words:
+                    st.warning(f"⚠️ Cover letter is shorter than recommended ({result.cover_letter.word_count} < {config.cover_letter_min_words} words)")
+                elif result.cover_letter.word_count > config.cover_letter_max_words:
+                    st.warning(f"⚠️ Cover letter is longer than recommended ({result.cover_letter.word_count} > {config.cover_letter_max_words} words)")
                 
                 if st.button("📋 Copy Cover Letter", key="copy_cover_letter"):
                     st.code(full_cover_letter, language=None)
@@ -385,11 +461,17 @@ def main():
                 ])
                 
                 st.text_area(
-                    f"Email Body ({result.email_draft.word_count} words):",
+                    f"Email Body ({result.email_draft.word_count} words | Target: {config.email_min_words}-{config.email_max_words}):",
                     value=full_email,
                     height=300,
                     key="email_body_display"
                 )
+                
+                # Word count validation  
+                if result.email_draft.word_count < config.email_min_words:
+                    st.warning(f"⚠️ Email is shorter than recommended ({result.email_draft.word_count} < {config.email_min_words} words)")
+                elif result.email_draft.word_count > config.email_max_words:
+                    st.warning(f"⚠️ Email is longer than recommended ({result.email_draft.word_count} > {config.email_max_words} words)")
                 
                 if st.button("📋 Copy Email", key="copy_email"):
                     email_with_subject = f"Subject: {result.email_draft.subject_line}\n\n{full_email}"
@@ -421,14 +503,15 @@ def main():
     
     # Footer
     st.markdown("---")
+    generation_time = st.session_state.generated_content.generation_time if st.session_state.generated_content else 0
     st.markdown(
-        """
+        f"""
         <div style='text-align: center; color: #666;'>
-            <p>🤖 Powered by OpenAI GPT-4o | Built with Streamlit</p>
+            <p>🤖 Powered by OpenAI {config.openai_model} | Built with Streamlit | Version {config.app_version}</p>
             <p>⚠️ Review all generated content before sending</p>
-            <p>💡 Generated in {:.1f}s | Professional quality assured</p>
+            <p>💡 Generated in {generation_time:.1f}s | Professional quality assured</p>
         </div>
-        """.format(st.session_state.generated_content.generation_time if st.session_state.generated_content else 0),
+        """,
         unsafe_allow_html=True
     )
 

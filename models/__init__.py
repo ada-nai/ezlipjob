@@ -2,7 +2,7 @@
 Pydantic models for structured outputs in the job application assistant
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
@@ -18,6 +18,16 @@ class PersonalizationMatch(BaseModel):
     job_requirement: str = Field(description="Matching job requirement")
     relevance_score: float = Field(description="Relevance score from 0-1")
     explanation: str = Field(description="Why this is a good match")
+
+    @field_validator('relevance_score')
+    @classmethod
+    def validate_relevance_score(cls, v):
+        """Ensure relevance score is between 0 and 1"""
+        if v < 0:
+            return 0.0
+        elif v > 1:
+            return 1.0
+        return v
 
 class CompanyInsight(BaseModel):
     """Company research insights from web search"""
@@ -60,15 +70,15 @@ class ContentQualityMetrics(BaseModel):
 class GenerationResult(BaseModel):
     """Complete result from content generation process"""
     success: bool = Field(description="Whether generation was successful")
-    cover_letter: Optional[CoverLetterContent] = Field(description="Generated cover letter")
-    email_draft: Optional[EmailDraft] = Field(description="Generated email draft")
-    personalization_matches: List[PersonalizationMatch] = Field(description="Experience-job matches found")
-    company_insights: Optional[CompanyInsight] = Field(description="Company research results")
-    quality_metrics: Optional[ContentQualityMetrics] = Field(description="Content quality assessment")
-    generation_time: float = Field(description="Time taken for generation in seconds")
-    error_message: Optional[str] = Field(description="Error message if generation failed")
+    cover_letter: Optional[CoverLetterContent] = Field(default=None, description="Generated cover letter")
+    email_draft: Optional[EmailDraft] = Field(default=None, description="Generated email draft")
+    personalization_matches: List[PersonalizationMatch] = Field(default=[], description="Experience-job matches found")
+    company_insights: Optional[CompanyInsight] = Field(default=None, description="Company research results")
+    quality_metrics: Optional[ContentQualityMetrics] = Field(default=None, description="Content quality assessment")
+    generation_time: float = Field(default=0.0, description="Time taken for generation in seconds")
+    error_message: Optional[str] = Field(default=None, description="Error message if generation failed")
     warnings: List[str] = Field(default=[], description="Any warnings during generation")
-    tone_used: ToneType = Field(description="Tone style applied to content")
+    tone_used: ToneType = Field(default=ToneType.PROFESSIONAL, description="Tone style applied to content")
 
 class WebSearchResult(BaseModel):
     """Structured web search result for company research"""
@@ -93,5 +103,5 @@ class ContentGenerationRequest(BaseModel):
     job_data: Dict[str, Any] = Field(description="Scraped job data") 
     tone: ToneType = Field(default=ToneType.PROFESSIONAL, description="Desired tone")
     include_company_research: bool = Field(default=True, description="Whether to research company")
-    custom_instructions: Optional[str] = Field(description="Additional custom instructions")
+    custom_instructions: Optional[str] = Field(default=None, description="Additional custom instructions")
     focus_areas: List[str] = Field(default=[], description="Specific areas to emphasize")

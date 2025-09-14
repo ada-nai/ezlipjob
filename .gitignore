@@ -131,6 +131,12 @@ dmypy.json
 # Streamlit secrets (contains API keys)
 .streamlit/secrets.toml
 
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
+
 # IDE files
 .vscode/
 .idea/

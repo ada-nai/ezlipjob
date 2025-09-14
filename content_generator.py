@@ -4,13 +4,13 @@ Uses GPT-4o for personalized cover letter and email generation with structured o
 """
 
 import openai
-import streamlit as st
 import time
 import json
 import re
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+from config import get_config, get_openai_config, get_content_limits
 from models import (
     GenerationResult, CoverLetterContent, EmailDraft, PersonalizationMatch,
     CompanyInsight, ContentQualityMetrics, ResumeJobAlignment, WebSearchResult,
@@ -23,12 +23,18 @@ class ContentGenerator:
     def __init__(self):
         """Initialize the content generator with GPT-4o"""
         try:
+            openai_config = get_openai_config()
             self.client = openai.OpenAI(
-                api_key=st.secrets["general"]["OPENAI_API_KEY"]
+                api_key=openai_config['api_key']
             )
-            self.model = "gpt-4o"  # Using GPT-4o as base model
-            self.max_tokens = 4000
-            self.temperature = 0.7
+            self.model = openai_config['model']
+            self.max_tokens = openai_config['max_tokens']
+            self.temperature = openai_config['temperature']
+            self.timeout = openai_config['timeout']
+            
+            # Get content limits
+            self.content_limits = get_content_limits()
+            
         except Exception as e:
             raise ValueError(f"Failed to initialize OpenAI client: {str(e)}")
     
@@ -258,7 +264,7 @@ class ContentGenerator:
         the candidate's background and the job requirements. 
         
         TONE: {tone_instructions[tone]}
-        REQUIREMENTS: 200-300 words total, professional format, specific examples, company alignment."""
+        REQUIREMENTS: {self.content_limits['cover_letter_min']}-{self.content_limits['cover_letter_max']} words total, professional format, specific examples, company alignment."""
         
         user_prompt = f"""
         CANDIDATE: {resume_data.get('name', 'Candidate')}
@@ -282,7 +288,7 @@ class ContentGenerator:
         3. Body 2: Demonstrate additional qualifications and achievements
         4. Closing: Call to action and professional close
         
-        Ensure 200-300 words total and include specific personalization elements.
+        Ensure {self.content_limits['cover_letter_min']}-{self.content_limits['cover_letter_max']} words total and include specific personalization elements.
         """
         
         try:
@@ -337,7 +343,7 @@ class ContentGenerator:
         
         REQUIREMENTS: 
         - Professional business email format
-        - 100-150 words in body (excluding greeting and signature)
+        - {self.content_limits['email_min']}-{self.content_limits['email_max']} words in body (excluding greeting and signature)
         - Clear subject line with job title and candidate name
         - Mention attached resume and cover letter
         - Include call to action
@@ -503,7 +509,8 @@ class ContentGenerator:
 
 def generate_application_content(resume_data: Dict, job_data: Dict, 
                                tone: str = "Professional", 
-                               include_company_research: bool = True) -> GenerationResult:
+                               include_company_research: bool = True,
+                               custom_instructions: Optional[str] = None) -> GenerationResult:
     """
     Convenience function for generating application materials
     """
@@ -513,7 +520,8 @@ def generate_application_content(resume_data: Dict, job_data: Dict,
         resume_data=resume_data,
         job_data=job_data,
         tone=ToneType(tone),
-        include_company_research=include_company_research
+        include_company_research=include_company_research,
+        custom_instructions=custom_instructions
     )
     
     return generator.generate_application_materials(request)
