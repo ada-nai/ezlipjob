@@ -370,12 +370,14 @@ class ContentGenerator:
         system_prompt = f"""You are an expert at writing professional job application emails. 
         Create a concise, compelling email that accompanies a job application.
         
-        IMPORTANT PERSONALIZATION REQUIREMENTS:
-        - Use the candidate's name: {candidate_name}
-        - Address the hiring manager: {hiring_manager}
+        CRITICAL PERSONALIZATION REQUIREMENTS:
+        - ALWAYS use the candidate's actual name: {candidate_name} 
+        - ALWAYS address the hiring manager: {hiring_manager}
         - If hiring manager is "Hiring Manager", use "Dear Hiring Manager"
-        - If hiring manager has a specific name, use "Dear [Name]" 
-        - Reference the candidate by name in the email body for personalization
+        - If hiring manager has a specific name, use "Dear [First Name] [Last Name]" 
+        - MUST include candidate name ({candidate_name}) in the email body for personalization
+        - MUST sign with candidate's full name ({candidate_name}) and contact details
+        - NEVER use placeholder text like "Candidate Name" or "Your Name"
         
         REQUIREMENTS: 
         - Professional business email format
@@ -399,7 +401,13 @@ class ContentGenerator:
         - {', '.join(resume_data.get('skills', [])[:5])}
         - {resume_data.get('experience', ['Relevant experience'])[0][:100] if resume_data.get('experience') else 'Relevant experience'}
         
-        Create a professional email draft with all components.
+        MANDATORY PERSONALIZATION:
+        - Greeting must address: {hiring_manager}
+        - Body must reference candidate: {candidate_name}
+        - Signature must include: {candidate_name}
+        - NO placeholder text allowed
+        
+        Create a professional email draft with all components using the actual names provided.
         """
         
         try:
@@ -416,14 +424,14 @@ class ContentGenerator:
                         "schema": {
                             "type": "object",
                             "properties": {
-                                "to_email": {"type": "string"},
-                                "subject_line": {"type": "string"},
-                                "greeting": {"type": "string"},
-                                "body_paragraph_1": {"type": "string"},
-                                "body_paragraph_2": {"type": "string"},
-                                "closing_paragraph": {"type": "string"},
-                                "signature": {"type": "string"},
-                                "word_count": {"type": "integer"}
+                                "to_email": {"type": "string", "description": "Recipient email address"},
+                                "subject_line": {"type": "string", "description": f"Professional subject line including candidate name ({candidate_name})"},
+                                "greeting": {"type": "string", "description": f"Personalized greeting using hiring manager name: {hiring_manager}"},
+                                "body_paragraph_1": {"type": "string", "description": f"Opening paragraph expressing interest, using candidate name {candidate_name}"},
+                                "body_paragraph_2": {"type": "string", "description": "Brief qualifications highlight with specific achievements"},
+                                "closing_paragraph": {"type": "string", "description": "Call to action and availability"},
+                                "signature": {"type": "string", "description": f"Professional signature block with candidate name {candidate_name} and contact information"},
+                                "word_count": {"type": "integer", "description": "Body word count excluding greeting and signature"}
                             },
                             "required": ["to_email", "subject_line", "greeting", "body_paragraph_1", "body_paragraph_2", "closing_paragraph", "signature", "word_count"]
                         }
