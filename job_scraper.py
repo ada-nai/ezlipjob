@@ -358,7 +358,7 @@ def create_manual_job_data(job_title: str, company_name: str, job_description: s
         'experience_level': "Not Specified",
         'contact_info': {
             'hiring_manager': "Hiring Manager",
-            'suggested_emails': [f"careers@{re.sub(r'[^\w]', '', company_name.lower())}.com"],
+            'suggested_emails': [f"careers@{company_name.lower().replace(' ', '').replace('.', '').replace(',', '')}.com"],
             'note': "Manual entry - contact information estimated"
         },
         'url': "Manual Entry"
