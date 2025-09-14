@@ -379,25 +379,204 @@ def create_manual_job_data(job_title: str, company_name: str, job_description: s
     }
 
 def extract_hiring_person(description: str) -> str:
-    """Extract hiring person name from job description"""
+    """Extract hiring person name from job description with enhanced logic"""
     if not description:
         return None
     
-    # Look for patterns like "Contact John Doe", "Reach out to Jane Smith", email signatures
-    patterns = [
+    # First, look for explicit name patterns
+    name_patterns = [
         r'contact\s+([A-Z][a-z]+\s+[A-Z][a-z]+)',
         r'reach\s+out\s+to\s+([A-Z][a-z]+\s+[A-Z][a-z]+)',
         r'hiring\s+manager[:\s]*([A-Z][a-z]+\s+[A-Z][a-z]+)',
-        r'([A-Z][a-z]+\s+[A-Z][a-z]+)@[a-zA-Z0-9.-]+',  # Name before email
+        r'get\s+in\s+touch\s+with\s+([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'speak\s+with\s+([A-Z][a-z]+\s+[A-Z][a-z]+)',
+        r'contact\s+person[:\s]*([A-Z][a-z]+\s+[A-Z][a-z]+)',
         r'^([A-Z][a-z]+\s+[A-Z][a-z]+)$',  # Name on its own line
     ]
     
-    for pattern in patterns:
+    for pattern in name_patterns:
         matches = re.findall(pattern, description, re.MULTILINE | re.IGNORECASE)
         for match in matches:
             # Validate it looks like a real name
             if len(match.split()) == 2 and all(part.isalpha() for part in match.split()):
                 return match.title()
+    
+    # If no explicit name found, try to infer from email address
+    email_pattern = r'\b([A-Za-z0-9._%+-]+)@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    emails = re.findall(email_pattern, description)
+    
+    for email in emails:
+        # Skip generic emails
+        if any(generic in email.lower() for generic in ['noreply', 'donotreply', 'no-reply', 'info', 'contact', 'hr', 'careers', 'jobs']):
+            continue
+            
+        # Extract name from email prefix
+        name_from_email = extract_name_from_email(email)
+        if name_from_email:
+            return name_from_email
+        
+        # If regex fails, try LLM-powered extraction
+        llm_name = extract_name_with_llm(email, description)
+        if llm_name:
+            return llm_name
+    
+    # Look for names before email addresses
+    email_name_pattern = r'([A-Z][a-z]+\s+[A-Z][a-z]+)[\s\-]*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})'
+    matches = re.findall(email_name_pattern, description)
+    for match in matches:
+        name = match[0].strip()
+        if len(name.split()) == 2 and all(part.isalpha() for part in name.split()):
+            return name.title()
+    
+    return None
+
+def extract_name_with_llm(email_prefix: str, context: str = "") -> str:
+    """Use LLM to extract name from email when regex patterns fail"""
+    try:
+        from config import get_config
+        import openai
+        
+        config = get_config()
+        if not config.openai_api_key or 'your-' in config.openai_api_key:
+            return None
+            
+        client = openai.OpenAI(api_key=config.openai_api_key)
+        
+        prompt = f"""Extract the person's full name from this email address: {email_prefix}
+
+Context: {context[:200] if context else "No additional context"}
+
+Instructions:
+- The email might be in format like "dixitnahar18" which should be "Dixit Nahar"
+- Or "johnsmith" which should be "John Smith"
+- Only return the name if you're confident (>80% sure)
+- Return in format: "First Last" 
+- If unsure, return "UNCERTAIN"
+
+Email: {email_prefix}
+Name:"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Use cheaper model for simple name extraction
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=20,
+            temperature=0.1
+        )
+        
+        name = response.choices[0].message.content.strip()
+        
+        # Validate the response
+        if (name and name != "UNCERTAIN" and 
+            len(name.split()) == 2 and 
+            all(part.isalpha() for part in name.split()) and
+            len(name) < 50):
+            return name.title()
+            
+    except Exception as e:
+        # Silently fail if LLM is unavailable
+        pass
+    
+    return None
+
+def extract_name_from_email(email_prefix: str) -> str:
+    """Extract and format name from email prefix with enhanced logic"""
+    if not email_prefix:
+        return None
+    
+    # Remove common email suffixes and numbers
+    email_clean = re.sub(r'\d+$', '', email_prefix.lower())  # Remove trailing numbers
+    
+    # Common email patterns to convert to names
+    name_parts = []
+    
+    # Split by common separators
+    for separator in ['.', '_', '-']:
+        if separator in email_clean:
+            parts = email_clean.split(separator)
+            if len(parts) == 2 and all(len(part) > 1 and part.isalpha() for part in parts):
+                name_parts = parts
+                break
+    
+    # Handle concatenated names (look for capital letters in original)
+    if not name_parts and len(email_clean) > 3:
+        # Look for camelCase patterns
+        original_clean = re.sub(r'\d+$', '', email_prefix)  # Keep original case, remove numbers
+        if any(c.isupper() for c in original_clean[1:]):
+            # Split on capital letters
+            parts = re.findall(r'[A-Z][a-z]*', original_clean)
+            if len(parts) == 2:
+                name_parts = [part.lower() for part in parts]
+        else:
+            # Try common name length patterns for concatenated names
+            common_first_names = {
+                'john': 4, 'mike': 4, 'dave': 4, 'alex': 4, 'mark': 4, 'paul': 4, 'eric': 4,
+                'james': 5, 'david': 5, 'chris': 5, 'steve': 5, 'peter': 5, 'kevin': 5, 'brian': 5,
+                'robert': 6, 'daniel': 6, 'andrew': 6, 'thomas': 6, 'joseph': 6, 'steven': 6,
+                'michael': 7, 'william': 7, 'richard': 7, 'matthew': 7, 'anthony': 7,
+                'christopher': 11, 'jonathan': 8, 'benjamin': 8, 'nicholas': 8,
+                # Add more Indian/international names
+                'dixit': 5, 'nahar': 5, 'arjun': 5, 'rahul': 5, 'ankit': 5, 'rohit': 5,
+                'priya': 5, 'neha': 4, 'amit': 4, 'raj': 3, 'dev': 3, 'sam': 3
+            }
+            
+            for name, length in common_first_names.items():
+                if (len(email_clean) > length and 
+                    email_clean.startswith(name) and 
+                    len(email_clean[length:]) >= 2):
+                    name_parts = [name, email_clean[length:]]
+                    break
+                    
+            # Try female names too
+            common_female_names = {
+                'mary': 4, 'lisa': 4, 'anna': 4, 'sara': 4, 'jane': 4, 'amy': 3,
+                'sarah': 5, 'maria': 5, 'laura': 5, 'linda': 5, 'karen': 5, 'nancy': 5,
+                'sandra': 6, 'donna': 5, 'carol': 5, 'ruth': 4, 'sharon': 6, 'michelle': 8,
+                'elizabeth': 9, 'jennifer': 8, 'patricia': 8, 'barbara': 7, 'margaret': 8,
+                # Add Indian/international female names
+                'priya': 5, 'kavya': 5, 'shreya': 6, 'pooja': 5, 'deepika': 7, 'ritu': 4
+            }
+            
+            if not name_parts:
+                for name, length in common_female_names.items():
+                    if (len(email_clean) > length and 
+                        email_clean.startswith(name) and 
+                        len(email_clean[length:]) >= 2):
+                        name_parts = [name, email_clean[length:]]
+                        break
+            
+            # Enhanced pattern matching for less common concatenated names
+            if not name_parts and len(email_clean) >= 6:
+                # Try to split based on common vowel/consonant patterns
+                # Look for natural break points in the name
+                possible_splits = []
+                
+                # Try splits at positions 3, 4, 5, 6
+                for split_pos in range(3, min(8, len(email_clean)-2)):
+                    first_part = email_clean[:split_pos]
+                    second_part = email_clean[split_pos:]
+                    
+                    # Check if both parts look like names (reasonable length, end with consonants/vowels)
+                    if (len(first_part) >= 3 and len(second_part) >= 3 and 
+                        first_part.isalpha() and second_part.isalpha()):
+                        possible_splits.append([first_part, second_part])
+                
+                # Pick the most balanced split
+                if possible_splits:
+                    # Prefer splits that are more balanced in length
+                    best_split = min(possible_splits, key=lambda x: abs(len(x[0]) - len(x[1])))
+                    name_parts = best_split
+    
+    # Format the name properly
+    if len(name_parts) == 2:
+        first_name = name_parts[0].capitalize()
+        last_name = name_parts[1].capitalize()
+        
+        # Validate names look reasonable
+        if (len(first_name) >= 2 and len(last_name) >= 2 and 
+            first_name.isalpha() and last_name.isalpha()):
+            return f"{first_name} {last_name}"
     
     return None
 
@@ -420,24 +599,112 @@ def extract_contact_email(description: str) -> str:
     return None
 
 def extract_subject_line(description: str) -> str:
-    """Extract suggested subject line from job description"""
+    """Extract suggested subject line from job description with enhanced patterns"""
     if not description:
         return None
     
-    # Look for patterns like "Keep subject: ...", "Subject: ...", "Use subject: ..."
-    patterns = [
-        r'keep\s+subject\s*[:\-]\s*(.+?)(?:\n|$)',
-        r'subject\s*[:\-]\s*(.+?)(?:\n|$)',
-        r'use\s+subject\s*[:\-]\s*(.+?)(?:\n|$)',
-        r'email\s+subject\s*[:\-]\s*(.+?)(?:\n|$)',
+    # Enhanced patterns for subject line extraction
+    subject_patterns = [
+        # Explicit subject line instructions
+        r'keep\s+subject\s*[:\-]\s*["\']?([^"\'\n]+)["\']?',
+        r'subject\s*[:\-]\s*["\']?([^"\'\n]+)["\']?',
+        r'use\s+subject\s*[:\-]\s*["\']?([^"\'\n]+)["\']?',
+        r'email\s+subject\s*[:\-]\s*["\']?([^"\'\n]+)["\']?',
+        r'subject\s+line\s*[:\-]\s*["\']?([^"\'\n]+)["\']?',
+        r'mail\s+subject\s*[:\-]\s*["\']?([^"\'\n]+)["\']?',
+        
+        # Pattern for quoted subject lines
+        r'["\']([^"\']*(?:job|application|position|role|opportunity)[^"\']*)["\']',
+        
+        # Pattern for subject lines in brackets or parentheses
+        r'\[([^\]]*(?:job|application|position|role|opportunity)[^\]]*)\]',
+        r'\(([^\)]*(?:job|application|position|role|opportunity)[^\)]*)\)',
+        
+        # Company + job title patterns
+        r'([A-Z][a-zA-Z\s]+ (?:job|application|position|role|opportunity))',
+        
+        # Job title + application patterns
+        r'([A-Z][a-zA-Z\s]+ (?:application|job application))',
     ]
     
-    for pattern in patterns:
+    for pattern in subject_patterns:
         matches = re.findall(pattern, description, re.IGNORECASE | re.MULTILINE)
-        if matches:
-            subject = matches[0].strip().strip('"\'')
-            if 5 < len(subject) < 100:  # Reasonable subject length
+        for match in matches:
+            subject = match.strip().strip('"\'')
+            
+            # Validate subject line quality
+            if is_valid_subject_line(subject):
                 return subject
+    
+    # If no explicit subject found, try to construct one from context
+    return construct_subject_from_context(description)
+
+def is_valid_subject_line(subject: str) -> bool:
+    """Validate if extracted text is a reasonable subject line"""
+    if not subject or len(subject) < 5 or len(subject) > 100:
+        return False
+    
+    # Should contain relevant keywords
+    relevant_keywords = ['job', 'application', 'position', 'role', 'opportunity', 'hiring', 'career', 'apply']
+    if not any(keyword in subject.lower() for keyword in relevant_keywords):
+        return False
+    
+    # Should not contain common non-subject phrases
+    invalid_phrases = ['please', 'thank you', 'regards', 'sincerely', 'best', 'looking forward']
+    if any(phrase in subject.lower() for phrase in invalid_phrases):
+        return False
+    
+    # Should not be too generic
+    generic_subjects = ['job application', 'application', 'position', 'role']
+    if subject.lower().strip() in generic_subjects:
+        return False
+    
+    return True
+
+def construct_subject_from_context(description: str) -> str:
+    """Construct a subject line from job posting context"""
+    # Extract company name and job title from description
+    company_patterns = [
+        r'(?:at|in|for|with)\s+([A-Z][a-zA-Z\s]+(?:Inc|Corp|Ltd|LLC|Company|Technologies|Tech|Solutions|Systems))',
+        r'([A-Z][a-zA-Z\s]+(?:Inc|Corp|Ltd|LLC|Company|Technologies|Tech|Solutions|Systems))',
+        r'join\s+([A-Z][a-zA-Z\s]+)(?:\s+team)?',
+        r'([A-Z][a-zA-Z]+)\s+(?:job|position|role|opportunity)',
+    ]
+    
+    job_title_patterns = [
+        r'(?:for|hiring|seeking)\s+([A-Z][a-zA-Z\s]+(?:engineer|developer|manager|analyst|specialist|coordinator|assistant))',
+        r'([A-Z][a-zA-Z\s]+(?:engineer|developer|manager|analyst|specialist|coordinator|assistant))\s+(?:position|role|job)',
+        r'we\s+are\s+looking\s+for\s+([A-Z][a-zA-Z\s]+)',
+    ]
+    
+    company = None
+    job_title = None
+    
+    # Find company
+    for pattern in company_patterns:
+        matches = re.findall(pattern, description, re.IGNORECASE)
+        if matches:
+            potential_company = matches[0].strip()
+            if 3 < len(potential_company) < 50:
+                company = potential_company
+                break
+    
+    # Find job title
+    for pattern in job_title_patterns:
+        matches = re.findall(pattern, description, re.IGNORECASE)
+        if matches:
+            potential_title = matches[0].strip()
+            if 5 < len(potential_title) < 50:
+                job_title = potential_title
+                break
+    
+    # Construct subject line
+    if company and job_title:
+        return f"{company} {job_title} Application"
+    elif company:
+        return f"{company} Job Application"
+    elif job_title:
+        return f"{job_title} Application"
     
     return None
 
