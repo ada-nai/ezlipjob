@@ -11,7 +11,7 @@
 EzLipJob is an AI-powered Streamlit application that revolutionizes your job application process. Simply upload your resume and paste a job posting - our advanced AI will analyze both and create personalized, professional application materials that highlight your most relevant experience.
 
 ### 🎪 **Live Demo**
-Experience EzLipJob in action: [Try the Demo](https://ezlipjob.streamlit.app) *(Coming Soon)*
+Experience EzLipJob in action: Error at Streamlit end during deployment ;(
 
 ---
 
@@ -47,7 +47,7 @@ Experience EzLipJob in action: [Try the Demo](https://ezlipjob.streamlit.app) *(
 ---
 
 ## Sample screenshot 
-<img width="1903" height="1026" alt="image" src="https://github.com/user-attachments/assets/daf75781-0f55-439f-b9f7-5269d55f80c3" />
+<img width="1915" height="1060" alt="image" src="https://github.com/user-attachments/assets/59e7c51b-6999-490a-8d26-fac47b30f232" />
 
 
 ### 1. Environment Setup
