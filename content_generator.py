@@ -248,6 +248,11 @@ class ContentGenerator:
             ToneType.CONCISE: "Be direct and to-the-point. Use shorter sentences and get straight to the value proposition."
         }
         
+        # Extract names for personalization
+        candidate_name = resume_data.get('name', 'Candidate')
+        contact_info = job_data.get('contact_info', {})
+        hiring_manager = contact_info.get('hiring_manager', 'Hiring Manager')
+        
         # Build context from matches
         match_context = "\n".join([
             f"- {match.resume_point} aligns with {match.job_requirement}"
@@ -263,15 +268,23 @@ class ContentGenerator:
         Create a compelling, personalized cover letter that demonstrates clear alignment between 
         the candidate's background and the job requirements. 
         
+        IMPORTANT PERSONALIZATION REQUIREMENTS:
+        - Address the hiring manager by name: {hiring_manager}
+        - Use the candidate's name: {candidate_name}
+        - If hiring manager is "Hiring Manager", use "Dear Hiring Manager"
+        - If hiring manager has a specific name, use "Dear [Name]"
+        - Reference the candidate by name in the letter body for personalization
+        
         TONE: {tone_instructions[tone]}
         REQUIREMENTS: {self.content_limits['cover_letter_min']}-{self.content_limits['cover_letter_max']} words total, professional format, specific examples, company alignment."""
         
         user_prompt = f"""
-        CANDIDATE: {resume_data.get('name', 'Candidate')}
+        CANDIDATE: {candidate_name}
         EMAIL: {resume_data.get('contact_info', {}).get('email', 'email@example.com')}
         
         JOB: {job_data.get('job_title')} at {job_data.get('company')}
         LOCATION: {job_data.get('location', 'Remote')}
+        HIRING_MANAGER: {hiring_manager}
         
         KEY ALIGNMENTS:
         {match_context}
@@ -305,14 +318,16 @@ class ContentGenerator:
                         "schema": {
                             "type": "object",
                             "properties": {
+                                "salutation": {"type": "string", "description": "Personalized greeting using hiring manager name"},
                                 "opening_paragraph": {"type": "string"},
                                 "body_paragraph_1": {"type": "string"},
                                 "body_paragraph_2": {"type": "string"},
                                 "closing_paragraph": {"type": "string"},
+                                "signature_line": {"type": "string", "description": "Professional closing with candidate name"},
                                 "word_count": {"type": "integer"},
                                 "personalization_elements": {"type": "array", "items": {"type": "string"}}
                             },
-                            "required": ["opening_paragraph", "body_paragraph_1", "body_paragraph_2", "closing_paragraph", "word_count", "personalization_elements"]
+                            "required": ["salutation", "opening_paragraph", "body_paragraph_1", "body_paragraph_2", "closing_paragraph", "signature_line", "word_count", "personalization_elements"]
                         }
                     }
                 },
@@ -331,31 +346,54 @@ class ContentGenerator:
                            tone: ToneType) -> EmailDraft:
         """Generate professional email draft using GPT-4o"""
         
-        # Determine recipient email
+        # Determine recipient email and suggested subject
         contact_info = job_data.get('contact_info', {})
         if isinstance(contact_info, dict):
-            to_email = contact_info.get('email', f"careers@{job_data.get('company', 'company').lower().replace(' ', '')}.com")
+            to_email = contact_info.get('contact_email', contact_info.get('email', f"careers@{job_data.get('company', 'company').lower().replace(' ', '')}.com"))
+            suggested_subject = contact_info.get('suggested_subject', None)
+            hiring_manager = contact_info.get('hiring_manager', 'Hiring Manager')
         else:
             to_email = f"careers@{job_data.get('company', 'company').lower().replace(' ', '')}.com"
+            suggested_subject = None
+            hiring_manager = 'Hiring Manager'
+        
+        # Extract candidate name for personalization
+        candidate_name = resume_data.get('name', 'Candidate')
+        
+        # Prepare subject line instruction
+        subject_instruction = ""
+        if suggested_subject:
+            subject_instruction = f"IMPORTANT: Use this EXACT subject line: '{suggested_subject}'"
+        else:
+            subject_instruction = f"Create a clear subject line with job title and candidate name ({candidate_name})"
         
         system_prompt = f"""You are an expert at writing professional job application emails. 
         Create a concise, compelling email that accompanies a job application.
         
+        IMPORTANT PERSONALIZATION REQUIREMENTS:
+        - Use the candidate's name: {candidate_name}
+        - Address the hiring manager: {hiring_manager}
+        - If hiring manager is "Hiring Manager", use "Dear Hiring Manager"
+        - If hiring manager has a specific name, use "Dear [Name]" 
+        - Reference the candidate by name in the email body for personalization
+        
         REQUIREMENTS: 
         - Professional business email format
         - {self.content_limits['email_min']}-{self.content_limits['email_max']} words in body (excluding greeting and signature)
-        - Clear subject line with job title and candidate name
+        - {subject_instruction}
         - Mention attached resume and cover letter
         - Include call to action
         - Tone: {tone.value}"""
         
         user_prompt = f"""
-        CANDIDATE: {resume_data.get('name', 'Candidate')}
+        CANDIDATE: {candidate_name}
         EMAIL: {resume_data.get('contact_info', {}).get('email', 'email@example.com')}
         PHONE: {resume_data.get('contact_info', {}).get('phone', '(555) 123-4567')}
         
         JOB: {job_data.get('job_title')} at {job_data.get('company')}
         RECIPIENT: {to_email}
+        HIRING_MANAGER: {hiring_manager}
+        {f"REQUIRED_SUBJECT: {suggested_subject}" if suggested_subject else ""}
         
         TOP QUALIFICATIONS:
         - {', '.join(resume_data.get('skills', [])[:5])}

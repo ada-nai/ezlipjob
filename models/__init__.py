@@ -40,10 +40,12 @@ class CompanyInsight(BaseModel):
 
 class CoverLetterContent(BaseModel):
     """Structured cover letter output"""
+    salutation: str = Field(description="Personalized greeting using hiring manager name")
     opening_paragraph: str = Field(description="Introduction paragraph with position interest")
     body_paragraph_1: str = Field(description="First body paragraph highlighting relevant experience")
     body_paragraph_2: str = Field(description="Second body paragraph with specific achievements")
     closing_paragraph: str = Field(description="Closing paragraph with call to action")
+    signature_line: str = Field(description="Professional closing with candidate name")
     word_count: int = Field(description="Total word count")
     personalization_elements: List[str] = Field(description="List of personalized elements included")
 

@@ -414,10 +414,12 @@ def main():
             if result.cover_letter:
                 # Combine all paragraphs
                 full_cover_letter = "\n\n".join([
+                    result.cover_letter.salutation,
                     result.cover_letter.opening_paragraph,
                     result.cover_letter.body_paragraph_1,
                     result.cover_letter.body_paragraph_2,
-                    result.cover_letter.closing_paragraph
+                    result.cover_letter.closing_paragraph,
+                    result.cover_letter.signature_line
                 ])
                 
                 st.text_area(
